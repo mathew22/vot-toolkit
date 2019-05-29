@@ -38,20 +38,8 @@ switch mode
 
 	case 'best'
 
-        [sorted_ranks, idx] = sort(ranks);
-        [~, unsort_idx] = sort(idx);
-
-        sorted_matrix = different(idx,idx);
-
-        for tracker = 2:length(ranks)
-            if sorted_matrix(tracker,tracker-1)
-                sorted_ranks(tracker) = sorted_ranks(tracker-1);
-            end;
-        end;
-        adapted = sorted_ranks(unsort_idx);
-
-	%	for tracker = 1:length(ranks)
-	%		adapted(tracker) = min(ranks(find(~different(tracker,:)))) ; %#ok<FNDSB>
-	%	end 
+		for tracker = 1:length(ranks)
+			adapted(tracker) = min(ranks(find(~different(tracker,:)))) ; %#ok<FNDSB>
+		end 
 
 end;

@@ -1,32 +1,20 @@
 function ncc
 % ncc VOT integration example
-%
+% 
 % This function is an example of tracker integration into the toolkit.
 % The implemented tracker is a very simple NCC tracker that is also used as
 % the baseline tracker for challenge entries.
 %
 
 % *************************************************************
+% VOT: Always call exit command at the end to terminate Matlab!
+% *************************************************************
+cleanup = onCleanup(@() exit() );
+
+% *************************************************************
 % VOT: Set random seed to a different value every time.
 % *************************************************************
-try
-    % Simple check for Octave environment
-    OCTAVE_VERSION;
-    rand('seed', sum(clock));
-    pkg load image;
-catch
-    RandStream.setGlobalStream(RandStream('mt19937ar', 'Seed', sum(clock)));
-end
-
-
-image = uint8(rand(240, 320, 3) * 255);
-imwrite(image, 'test.jpg');
-image = imread('test.jpg');
-region = [30, 30, 30, 30];
-[state, ~] = ncc_initialize(image, region);
-[state, region] = ncc_update(state, image);
-[state, region] = ncc_update(state, image);
-[state, region] = ncc_update(state, image);
+RandStream.setGlobalStream(RandStream('mt19937ar', 'Seed', sum(clock)));
 
 % **********************************
 % VOT: Get initialization data
@@ -46,15 +34,15 @@ while true
     if isempty(image)
         break;
     end;
-
+    
 	% Perform a tracking step, obtain new region
-    [state, region, confidence] = ncc_update(state, imread(image));
-
+    [state, region] = ncc_update(state, imread(image));
+    
     % **********************************
     % VOT: Report position for frame
     % **********************************
-    handle = handle.report(handle, region, confidence);
-
+    handle = handle.report(handle, region);
+    
 end;
 
 % **********************************
@@ -78,7 +66,7 @@ function [state, location] = ncc_initialize(I, region, varargin)
         y2 = round(max(region(2:2:end)));
         region = round([x1, y1, x2 - x1, y2 - y1]);
     else
-        region = round([round(region(1)), round(region(2)), ...
+        region = round([round(region(1)), round(region(2)), ... 
             round(region(1) + region(3)) - round(region(1)), ...
             round(region(2) + region(4)) - round(region(2))]);
     end;
@@ -98,10 +86,9 @@ function [state, location] = ncc_initialize(I, region, varargin)
 
 end
 
-function [state, location, confidence] = ncc_update(state, I, varargin)
+function [state, location] = ncc_update(state, I, varargin)
 
-    confidence = 0;
-    gray = double(rgb2gray(I)) ;
+    gray = double(rgb2gray(I)) ; 
 
     [height, width] = size(gray);
 
@@ -126,13 +113,8 @@ function [state, location, confidence] = ncc_update(state, I, varargin)
 
     x1 = x1 + pad(2);
     y1 = y1 + pad(1);
-    [confidence, imax] = max(C(:));
-    if isempty(imax)
-        mx = 0;
-        my = 0;
-    else
-        [my, mx] = ind2sub(size(C),imax(1));
-    end
+    [~, imax] = max(C(:));
+    [my, mx] = ind2sub(size(C),imax(1));
 
     position = [x1 + mx - state.size(1) / 2, y1 + my - state.size(2) / 2];
 

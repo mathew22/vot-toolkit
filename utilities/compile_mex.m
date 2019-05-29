@@ -1,7 +1,7 @@
-function [success] = compile_mex(name, files, includes, directory, varargin)
+function [success] = compile_mex(name, files, includes, directory)
 % compile_mex Compile given source files to a MEX function
 %
-% Compiles or recompiles given source files to a MEX function taking
+% Compiles or recompiles given source files to a MEX function taking 
 % into account source files timestamps. Also works in Octave by switching
 % to mkoctfile command.
 %
@@ -14,6 +14,7 @@ function [success] = compile_mex(name, files, includes, directory, varargin)
 % Output:
 % - success (boolean): True if successful.
 %
+
 
     function datenum = file_timestamp(filename)
         if ~exist(filename, 'file')
@@ -38,19 +39,7 @@ function [success] = compile_mex(name, files, includes, directory, varargin)
         end;
     end
 
-    mexdebug = get_global_variable('mex_debug', false);
-
     arguments = {};
-
-    if is_octave()
-       arguments{end+1} = '-DOCTAVE';
-    else
-        arguments{end+1} = '-lut';
-    end
-
-    if mexdebug
-       arguments{end+1} = '-g';
-    end;
 
     if nargin < 3
         includes = cell(0);
@@ -70,26 +59,19 @@ function [success] = compile_mex(name, files, includes, directory, varargin)
             cd(directory)
         end;
 
-        if is_octave()
+        if is_octave() 
 
-            [out, status] = mkoctfile('-mex', '-o', name, varargin{:}, includes{:}, files{:}, arguments{:});
-
-            % Clean up mess
-            for i = 1:numel(files)
-                [pathstr, name, ext] = fileparts(files{i});
-                tmpfile = fullfile(directory, [name, '.o']);
-                if exist(tmpfile, 'file')
-                  delete(tmpfile);
-                end
-            end
+            [out, status] = mkoctfile('-mex', '-o', name, includes{:}, files{:}, arguments{:});
 
             if status
-                error('Compile problem, see compiler output.');
+                print_text('ERROR: Unable to compile MEX function.');
+                success = false;
+                return;
             end;
 
         else
 
-            mex('-output', name, varargin{:}, includes{:}, files{:}, arguments{:});
+            mex('-output', name, includes{:}, files{:}, arguments{:});
 
         end
 
@@ -98,10 +80,11 @@ function [success] = compile_mex(name, files, includes, directory, varargin)
         success = true;
 
     catch e
+
         cd(old_dir);
         print_text('ERROR: Unable to compile MEX function: "%s".', e.message);
         success = false;
 
     end
-
+    
 end

@@ -28,10 +28,10 @@ structure contains the following fields:
 -   **height** *(integer)*: Height of images in the sequence.
 -   **channels** *(integer)*: Number of color channels in the sequence.
 -   **grayscale** *(boolean)*: True if the sequence is grayscale.
--   **tags** *(structure)*: Contains per-frame tag data.
-    -   **names** *(cell)*: Cell array of tag names.
+-   **labels** *(structure)*: Contains per-frame label data.
+    -   **names** *(cell)*: Cell array of label names.
     -   **data** *(boolean)*: A boolean matrix where each column
-            denotes per-frame tag presence for a corresponding name in
+            denotes per-frame label presence for a corresponding name in
             the *names* field.
 
 -   **values** *(structure)*: Contains per-frame value data.
@@ -51,18 +51,18 @@ the sequence directory.
 Trajectory format
 -----------------
 
-The stored output of the tracker (the final combined trajectory) is encoded as
-text file where a region for each frame is encoded as comma-separated list.
-The absolute coordinates of a region have an origin in the top-left corner of the
-image with coordinates `0,0`. Currently there are three types of region formats
+The stored output of the tracker (the final combined trajectory) is encoded as 
+text file where a region for each frame is encoded as comma-separated list. 
+The absolute coordinates of a region have an origin in the top-left corner of the 
+image with coordinates `0,0`. Currently there are three types of region formats 
 that are supported by the system.
 
  * **Rectangle** - Specified by four values: `left`, `top`, `width`, and `height`.
  * **Polygon** - Specified by even number of at least six values that define points in the polygon (`x` and `y` coordinates).
- * **Special**: This stored sequence describes the entire tracking trial process
-    with failures and re-initializations encoded between regular frames
-    in a special format that is specified by a single value. This value can
-    have a special meaning. Initialization of the tracker is denoted
+ * **Special**: This stored sequence describes the entire tracking trial process 
+    with failures and re-initializations encoded between regular frames 
+    in a special format that is specified by a single value. This value can 
+    have a special meaning. Initialization of the tracker is denoted 
     by `1`, failure of the tracker is denoted by `2` and undefined state (e.g. due to frame skipping) is denoted by `0`.
 
 
@@ -71,10 +71,11 @@ Module functions
 
 ### Loading
 
--   [sequence_create](sequence_create.m) - Create a new sequence descriptor
--   [sequence_load](sequence_load.m) - Load a set of sequences
+-   [create_sequence](create_sequence.m) - Create a new sequence descriptor
+-   [load_sequences](load_sequences.m) - Load a set of sequences
 
 ### Conversion
+
 
 -   [convert_sequences](convert_sequences.m) - Converts sequences using a converter
 -   [sequence_grayscale](sequence_grayscale.m) - Returns grayscale sequence
@@ -87,20 +88,19 @@ Module functions
 
 ### Access
 
--   [sequence_get_image](sequence_get_image.m) - Returns image paths for the given sequence
--   [sequence_get_region](sequence_get_region.m) - Returns region, or multiple regions for the given sequence
--   [sequence_get_frame_value](sequence_get_frame_value.m) - Returns frame values for the given sequence
--   [sequence_get_tags](sequence_get_tags.m) - Returns all tags for a given frame
--   [sequence_query_tag](sequence_query_tag.m) - Find tag occurences in a sequence
--   [sequence_find](sequence_find.m) - Find a sequence by its name
+-   [get_image](get_image.m) - Returns image path for the given sequence
+-   [get_region](get_region.m) - Returns region, or multiple regions for the given sequence
+-   [get_frame_value](get_frame_value.m) - Returns frame values for the given sequence
+-   [get_labels](get_labels.m) - Returns labels for a given frame
+-   [query_label](query_label.m) - Find label in sequence
 
 ### Visualization
 
 These functions are used to maniputate visualization information for
 sequences.
 
--   [sequence_visualize](sequence_visualize.m) - Interactive sequence visualization
--   [sequence_select](sequence_select.m) - Select sequence from a list interactively
+-   [visualize_sequence](visualize_sequence.m) - Interactive sequence visualization
+-   [select_sequence](select_sequence.m) - Select sequence from a list interactively
 
 ### Trajectory
 
@@ -110,9 +110,15 @@ sequences.
 
 ### Region
 
--   [region_draw](region_draw.m) - Draw a region on the current figure
+-   [draw_region](draw_region.m) - Draw a region on the current figure
 -   [region_offset](region_offset.m) - Translates the region
 -   region_overlap - A MEX function that calculates the overlap between two regions
 -   region_convert - A MEX function that converts between different region formats
 -   region_mask - A MEX function that converts a region to a binary mask
+
+Submodules
+----------
+ 
+-   [clustering](clustering/) - Sequence clustering code
+
 

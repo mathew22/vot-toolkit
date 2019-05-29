@@ -10,131 +10,159 @@ function workspace_test(tracker, sequences, varargin)
 % - sequences (cell or structure): Array of sequence structures.
 %
 
-if isempty(sequences)
-    error('No sequence provided');
-end
+current_sequence = get_global_variable('current_sequence', 1);
+
+if ~exist('trajectory', 'var')
+	trajectory = [];
+end;
+
+performance = struct('frames', 0, 'time', 0);
 
 print_text('');
 print_text('***************************************************************************');
 print_text('');
 print_text('Welcome to the VOT workspace testing utility!');
 print_text('This process will help you prepare your tracker for the evaluation.');
-print_text('When beginning with the integration it is recommended to use the tool ');
-print_text('to see if the tracker is behaving correctly.');
+print_text('When beginning with the integration it is recommended to follow the steps ');
+print_text('a, b, c to verify the execution and the output data.');
 print_text('');
 print_text('***************************************************************************');
 print_text('');
 
-debug_state = get_global_variable('trax_debug', false);
-set_global_variable('trax_debug', true);
-set_global_variable('trax_debug_console', true);
-
-if is_octave()
-use_gui = get_global_variable('gui', true);
-else
-use_gui = get_global_variable('gui', usejava('awt'));
+if ~tracker.trax
+    print_text('***************************************************************************');
+    print_text('');
+    print_text('                       * DEPRECATION WARNING * ');
+    print_text('');
+    print_text('You are using an outdated mechanism for communication between the tracker');
+    print_text('and the VOT toolkit. Starting with the next version of the toolkit the ');
+    print_text('support for this mechanism will be removed completely. We recommend that');
+    print_text('you switch to TraX protocol before that time to avoid any problems and to');
+    print_text('help us with testing of the protocol.');
+    print_text('');
+    print_text('***************************************************************************');
+    print_text('');
 end;
 
-try
+while 1
+    print_text('Choose action:');
+    print_indent(1);
 
-    while 1
+    print_text('a - Generate a directory with input data for manual test');
+    print_text('b - Run tracker once within the evaluation');
+    if ~isempty(trajectory)
+        print_text('c - Visually compare results with the groundtruth');
+    end;
+    if get_global_variable('debug', 0)
+        print_text('d - Disable debug output');
+    else
+        print_text('d - Enable debug output');
+    end;
+    if performance.frames > 0
+        print_text('t - Estimate required time for a single experiment on the given sequence set');
+    end;
+    print_text('e - Exit');
+    print_indent(-1);
 
-        current_sequence = sequence_select(sequences);
+    option = input('Choose action: ', 's');
 
+    switch option
+    case 'a'
+        current_sequence = select_sequence(sequences);       
+        
+        if ~isempty(current_sequence)
+            
+            [command, directory] = tracker.run(tracker, sequences{current_sequence}, struct('repetition', 1, 'repetitions', 1, 'fake', true));
+
+            launcher_script = generate_launcher_script(tracker, command, directory);
+            
+            print_text('Input data generated in directory "%s"', directory);
+            print_text('Open the directory in a terminal and manually execute the generated launch script.');
+            print_text('The generated launcher script is named: %s', launcher_script);
+            print_text('Once the tracker is working as expected (generates the output.txt), delete the directory.');
+        end;
+    case 'b'
+        current_sequence = select_sequence(sequences);       
+        
         if ~isempty(current_sequence)
 
             print_text('Sequence "%s"', sequences{current_sequence}.name);
+            [trajectory, time] = tracker.run(tracker, sequences{current_sequence}, struct('repetition', 1, 'repetitions', 1));
 
-            data.figure = 1;
-            data.sequence = sequences{current_sequence};
-            data.index = 1;
-			data.gui = use_gui;
-            data.channels = {};
+            performance.time = performance.time + mean(time) * sequences{current_sequence}.length;
 
-            tracker_run(tracker, @callback, data);
-
-        else
-            break;
+            performance.frames = performance.frames + sequences{current_sequence}.length;
+        end;        
+    case 'c'
+        if ~isempty(trajectory) && current_sequence > 0 && current_sequence <= length(sequences)
+            visualize_sequence(sequences{current_sequence}, trajectory);
         end;
+    case 't'
+        if performance.frames > 0
 
-    end
+            fps = performance.frames / performance.time;
+            
+            if tracker.trax
+                estimate = estimate_completion_time(sequences, 'fps', fps, 'failures', 0);
+            else
+                estimate = estimate_completion_time(sequences, 'fps', fps);
+            end
 
-catch e
-    % Restore debug flag
-    set_global_variable('trax_debug', debug_state);
-    set_global_variable('trax_debug_console', false);
-    rethrow(e);
-end
+            print_text('Based on the current estimate (fps = %.2f), the completion time for %d sequences is %s', fps, length(sequences), format_interval(estimate));
+            
+        end;   
+	case 'd'
+        set_global_variable('debug', ~get_global_variable('debug', 0));
+    case 'e'
+        break;
+    case 'q'
+        break;
 
-end
-
-
-function [image, region, properties, data] = callback(state, data)
-
-	region = [];
-	image = [];
-    properties = struct();
-
-    if isempty(data.channels)
-        if ~all(ismember(state.channels, fieldnames(data.sequence.channels)));
-            error('Sequence does not contain all channels required by the tracker.');
-        end;
-        data.channels = state.channels;
     end;
     
-	% Handle initial frame (initialize for the first time)
-	if isempty(state.region)
-		region = sequence_get_region(data.sequence, data.index);
-		image = sequence_get_image(data.sequence, data.index, data.channels);
-		return;
-	end;
+end;
 
-	if data.gui
+end
 
-		image_path = sequence_get_image(data.sequence, data.index);
-		hf = sfigure(data.figure);
-		set(hf, 'Name', sprintf('%s (%d/%d t=%.3fs)', data.sequence.name, data.index, data.sequence.length, state.time), 'NumberTitle', 'off');
-		imshow(imread(image_path));
-		hold on;
-		region_draw(sequence_get_region(data.sequence, data.index), [1 0 0], 2);
-		region_draw(state.region, [0 1 0], 1);
-		hold off;
-		drawnow;
-		try
-		    [~, ~, c] = ginput(1);
-		catch
-		    c = -1;
-		end
-		try
-		    if c == ' ' || c == 'f' || uint8(c) == 29
+function launcher_script = generate_launcher_script(tracker, command, directory)
 
-		    elseif c == 'q' || c == -1
-		        print_text('Quitting.');
-		        return;
-		    end
-		catch e
-		    print_text('Error %s', e.message);
-		end
+    variables = struct;
 
-	else
+    if ispc
+        library_var = 'PATH';
+        script_suffix = '.bat';
+        variable_define = 'set';
+    else
+        library_var = 'LD_LIBRARY_PATH';
+        script_suffix = '.sh';
+        variable_define = 'export';
+    end;
 
-		c = input('(space/Q) ', 's');
-
-		if c == 'q'
-			print_text('Quitting.');
-		    return;
-		end
-	end;
-
-	data.index = data.index + 1;
-
-	% End of sequence
-	if data.index > data.sequence.length
-		return;
-	end
-
-    image = sequence_get_image(data.sequence, data.index, data.channels);
-
+    if ~isempty(tracker.linkpath)
+        userpath = tracker.linkpath{end};
+        if length(tracker.linkpath) > 1
+            userpath = [sprintf(['%s', pathsep], tracker.linkpath{1:end-1}), userpath];
+        end;
+        variables.(library_var) = userpath;
+    end;
+    
+    launcher_script = fullfile(directory, ['launcher', script_suffix]);
+    
+    fid = fopen(launcher_script, 'w');
+    
+    fields = repmat(fieldnames(variables), numel(variables), 1);
+    values = struct2cell(variables);
+    
+    cellfun(@(x, y) fprintf(fid, '%s "%s=%s"\n', variable_define, x, y), fields, values, 'UniformOutput', 0);
+    
+    fprintf(fid, '%s\n', command);
+    
+    fclose(fid);
+    
+    if isunix && ~is_octave
+       fileattrib(launcher_script, '+x'); 
+    end
+    
 end
 
 

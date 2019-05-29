@@ -13,10 +13,6 @@ function [sequences, experiments] = workspace_load(varargin)
 %
 % Input:
 % - varargin[Force] (boolean): Force reloading the sequences and experiments.
-% - varargin[Directory] (string): Set the directory of the workspace (otherwise
-%   current directory is used.
-% - varargin[OnlyDefaults] (boolean): Only set default global variables and skip
-%   workspace initialization.
 %
 % Output:
 % - sequences (cell): Array of sequence structures.
@@ -25,14 +21,12 @@ function [sequences, experiments] = workspace_load(varargin)
 
 force = false;
 directory = pwd();
-only_defaults = false;
 
 args = varargin;
 for j=1:2:length(args)
     switch lower(varargin{j})
         case 'directory', directory = args{j+1};
         case 'force', force = args{j+1};
-        case 'onlydefaults', only_defaults = args{j+1};
         otherwise, error(['unrecognized argument ' args{j}]);
     end
 end
@@ -46,7 +40,7 @@ if ~force
         sequences = evalin('base', 'sequences');
 
         % Are variables correts at a glance ...
-        cached = iscell(sequences);
+        cached = iscell(sequences)
 
     catch
 
@@ -60,6 +54,12 @@ else
 
 end;
 
+configuration_file = fullfile(directory, 'configuration.m');
+
+if ~exist(configuration_file, 'file')
+    error('Directory is probably not a VOT workspace. Please run workspace_create first.');
+end;
+
 % Some defaults
 set_global_variable('toolkit_path', fileparts(fileparts(mfilename('fullpath'))));
 set_global_variable('indent', 0);
@@ -68,34 +68,15 @@ set_global_variable('debug', 0);
 set_global_variable('cache', 1);
 set_global_variable('bundle', []);
 set_global_variable('cleanup', 1);
+set_global_variable('native_url', 'http://box.vicos.si/vot/toolkit/');
+set_global_variable('trax_url', 'https://github.com/votchallenge/trax/archive/master.zip');
 set_global_variable('trax_mex', []);
 set_global_variable('trax_client', []);
 set_global_variable('trax_timeout', 30);
 set_global_variable('matlab_startup_model', [923.5042, -4.2525]);
 set_global_variable('legacy_rasterization', false);
-set_global_variable('native_path', fullfile(get_global_variable('toolkit_path'), 'native'));
 
-if only_defaults
-	sequences = {};
-	experiments = {};
-	return;
-end;
-
-configuration_file = fullfile(directory, 'configuration.m');
-
-if ~isascii(get_global_variable('toolkit_path'))
-    warning('Toolkit path contains non-ASCII characters. This may cause problems.')
-end;
-
-if ~isascii(directory)
-    warning('Workspace path contains non-ASCII characters. This may cause problems.')
-end;
-
-if ~exist(configuration_file, 'file')
-    error('Directory is probably not a VOT workspace. Please run workspace_create first.');
-end;
-
-print_text('Initializing workspace ...');
+print_text('Initializing VOT workspace ...');
 
 configuration_script = get_global_variable('select_configuration', 'configuration');
 
@@ -115,10 +96,11 @@ catch e
     end;
 end;
 
-% Check for potential updates
-if get_global_variable('check_updates', true)
-    check_updates();
-end;
+native_dir = fullfile(get_global_variable('toolkit_path'), 'native');
+mkpath(native_dir);
+rmpath(native_dir); rehash; % Try to avoid locked files on Windows
+initialize_native(native_dir);
+addpath(native_dir);
 
 experiment_stack = get_global_variable('stack', 'vot2013');
 
@@ -130,11 +112,6 @@ stack_configuration = str2func(['stack_', experiment_stack]);
 
 experiments = stack_configuration();
 
-mkpath(get_global_variable('native_path'));
-rmpath(get_global_variable('native_path')); rehash; % Try to avoid locked files on Windows
-initialize_native();
-addpath(get_global_variable('native_path'));
-
 if cached
     print_debug('Skipping loading sequence data (using cached structures)');
 else
@@ -143,7 +120,7 @@ else
 
     print_text('Loading sequences ...');
 
-    sequences = sequence_load(sequences_directory, ...
+    sequences = load_sequences(sequences_directory, ...
         'list', get_global_variable('sequences', 'list.txt'));
 
     if isempty(sequences)
@@ -151,97 +128,4 @@ else
     end;
 
 end;
-
-end
-
-function [updated, latest] = check_updates()
-% Check for toolkit updates online.
-
-updated = false;
-latest = [];
-
-toolkit_path = get_global_variable('toolkit_path');
-workspace_path = get_global_variable('workspace_path');
-
-mkpath(fullfile(workspace_path, 'cache'));
-timestamp_file = fullfile(workspace_path, 'cache', '.update_check');
-
-check_interval = get_global_variable('update_check_interval', 0.1);
-
-current_timestamp = datenum(clock());
-previous_timestamp = 0;
-
-fd = fopen(timestamp_file, 'r');
-if fd > 0
-    previous_timestamp = fscanf(fd, '%f');
-    fclose(fd);
-end
-
-if current_timestamp > previous_timestamp + check_interval
-
-    if exist(fullfile(toolkit_path, 'PACKAGE'), 'file')
-        package = fileread(fullfile(toolkit_path, 'PACKAGE'));
-        print_text('Checking for toolkit updates on BinTray.')
-        latest = get_bintray_version(package);
-    else
-        print_text('Checking for toolkit updates on GitHub.')
-        latest = get_github_version();
-    end;
-
-    if isempty(latest)
-        updated = false;
-        return;
-    end;
-
-    updated = toolkit_version(latest) > 0;
-
-    fd = fopen(timestamp_file, 'w'); fprintf(fd, '%f', current_timestamp); fclose(fd);
-
-    if updated
-        version = toolkit_version();
-        version = sprintf('%d.%d.%d', version.major, version.minor, version.patch);
-        print_text('');
-        print_text('***************************************************************************');
-        print_text('');
-        print_text('                  *** Toolkit update available ***');
-        print_text('');
-        print_text('The VOT toolkit has been updated, a new version is available online. Please');
-        print_text('consider updating your local copy or consult the release log for more');
-        print_text('information.');
-        print_text('');
-        print_text('Local version %s, remote version %s', version, latest);
-        print_text('');
-        print_text('***************************************************************************');
-        print_text('');
-
-    end
-
-end;
-
-end
-
-function version = get_bintray_version(package)
-
-    api_server = 'https://api.bintray.com/';
-
-    try
-        meta = json_decode(urlread(sprintf('%s/packages/votchallenge/toolkit/%s', api_server, package)));
-		version = meta.latest_version;
-    catch
-        version = [];
-        return;
-    end
-
-end
-
-function version = get_github_version()
-
-    try
-        version = urlread('https://raw.githubusercontent.com/votchallenge/vot-toolkit/master/VERSION');
-    catch
-        version = [];
-        return;
-    end
-
-end
 

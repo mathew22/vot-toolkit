@@ -18,9 +18,9 @@ char* getString(const mxArray *arg) {
     int l = (int) mxGetN(arg);
 
     char* str = (char *) malloc(sizeof(char) * (l + 1));
-
+    
     mxGetString(arg, str, (l + 1));
-
+    
     return str;
 }
 
@@ -46,7 +46,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
 			line++;
 
-			if (!ifs.getline(line_buffer, line_size)) break;
+			ifs.getline(line_buffer, line_size);
+
+			if (!ifs.good()) break;
 
 			region_container* region = NULL;
 
@@ -56,8 +58,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
 			} else {
 
-				char message[500];
-				sprintf(message, "Unable to parse region at line %d, skipping.", line);
+				char message[128];
+				sprintf(message, "Unable to parse region at line %d, skipping", line);
 				mexWarnMsgTxt(message);
 
 			}
