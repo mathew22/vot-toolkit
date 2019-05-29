@@ -1,4 +1,4 @@
-function [handle, image, region] = vot(format)
+function [handle, image, region] = vot(format, channels)
 % vot Initialize communication and obtain communication structure
 %
 % This function is used to initialize communication with the toolkit.
@@ -11,6 +11,11 @@ function [handle, image, region] = vot(format)
 %
 % Input:
 % - format (string): Desired region input format.
+% - channels (string): Which channels are required by the trackers
+%     - (default): only color
+%     - rgbd: color and depth
+%     - ir: only ir
+%     - rgbt: color and ir
 %
 % Output:
 % - handle (structure): Updated communication handle structure.
@@ -18,23 +23,34 @@ function [handle, image, region] = vot(format)
 % - region (vector): Initial region encoded as a rectangle or as a polygon.
 
     if nargin < 1
-       format = 'rectangle'; 
+       format = 'rectangle';
     end
 
-    [handle, image, region] = tracker_initialize(format);
+    if nargin < 2 || strcmp(channels, 'color')
+       channels = {'color'};
+    elseif strcmp(channels, 'rgbd')
+        channels = {'color', 'depth'};
+    elseif strcmp(channels, 'ir')
+        channels = {'ir'};
+    elseif strcmp(channels, 'rgbt')
+        channels = {'color', 'ir'};
+    end
+
+    [handle, image, region] = tracker_initialize(format, channels);
     handle.frame = @tracker_frame;
     handle.report = @tracker_report;
     handle.quit = @tracker_quit;
-    
+
 end
 
-function [handle, image, region] = tracker_initialize(format)
+function [handle, image, region] = tracker_initialize(format, channels)
 % tracker_initialize Initialize communication structure
 %
 % This function is used to initialize communication with the toolkit.
 %
 % Input:
 % - format (string): Desired region input format.
+% - channels (string, cell): Which channels are required by the trackers
 %
 % Output:
 % - handle (structure): Updated communication handle structure.
@@ -45,73 +61,30 @@ function [handle, image, region] = tracker_initialize(format)
         error('VOT: Illegal region format.');
     end;
 
-    if ~isempty(getenv('TRAX'))
-        % In case TraX can be used, we include the path to the server mex function.
-        if ~isempty(getenv('TRAX_MEX'))
-            addpath(getenv('TRAX_MEX'));
-        end;
-        traxserver('setup', format, 'path');
+    if ~all(ismember(channels,  {'color', 'depth', 'ir'}))
+        error('VOT: Illegal channel type.');
+    end;
 
-        [image, region] = traxserver('wait');
+    if ~isempty(getenv('TRAX_MEX'))
+        addpath(getenv('TRAX_MEX'));
+    end;
 
-        handle = struct('trax', true);
-        
-        if isempty(image) || isempty(region)
-            tracker_quit(handle);
-            return;
-        end;
+    traxserver('setup', format, 'path', 'Channels', channels);
 
-        traxserver('status', region);
-        
+    [image, region] = traxserver('wait');
+
+    handle = struct('trax', true);
+
+    if isempty(image) || isempty(region)
+        tracker_quit(handle);
         return;
     end;
 
-    handle.trax = false;
-
-    % read the image file paths
-    fid = fopen('images.txt','r'); 
-    images = textscan(fid, '%s', 'delimiter', '\n');
-    fclose(fid);
-    handle.images = images{1};
-
-    % read the region
-    region = dlmread('region.txt');
-    region = region(:);
-    handle.format = format;
-    handle.index = 2;
-    handle.regions = cell(numel(handle.images), 1);
-
-    if numel(region) == 4
-        format = 'rectangle';
-    elseif numel(region) >= 6 && mod(numel(region), 2) == 0
-        format = 'polygon';
-    else
-        error('VOT: Illegal format of the input region.');
+    if iscell(image) && numel(image) == 1
+        image = image{1}
     end;
 
-    switch handle.format
-        case 'rectangle'
-            if strcmp(format, 'polygon')
-                x = region(1:2:end);
-                y = region(2:2:end);
-                region = [min(x), min(y), max(x) - min(x), max(y) - min(y)];
-            end;
-        case 'polygon'
-            if strcmp(format, 'rectangle')
-                x = [region(1), region(1), region(1) + region(3), ...
-                     region(1) + region(3), region(1)];
-                y = [region(2), region(2) + region(4), region(2) + ...
-                     region(4), region(2), region(2)];
-                region = zeros(8, 1);
-                region(1:2:7) = x;
-                region(2:2:8) = y;
-            end;
-    end;
-
-    handle.position = 2;
-    
-    handle.regions{1} = region;
-    image = handle.images{1};
+	handle.initialization = region;
 
 end
 
@@ -131,26 +104,24 @@ function [handle, image] = tracker_frame(handle)
         error('VOT: Handle should be a structure.');
     end;
 
-    if handle.trax
-        [image, region] = traxserver('wait');
+	if ~isempty(handle.initialization)
+	    traxserver('status', handle.initialization);
+		handle.initialization = [];
+	end;
 
-        if isempty(image) || ~isempty(region)
-            handle.quit(handle);
-        end;
+    [image, region] = traxserver('wait');
 
-        return;
+    if isempty(image) || ~isempty(region)
+        handle.quit(handle);
     end;
 
-    if handle.position > numel(handle.images)
-        image = [];
-        return;
+    if iscell(image) && numel(image) == 1
+        image = image{1}
     end;
-    
-    image = handle.images{handle.position};
 
 end
 
-function handle = tracker_report(handle, region)
+function handle = tracker_report(handle, region, confidence)
 % tracker_report Report region for current frame and advance
 %
 % This function stores the region for the current frame and advances
@@ -159,6 +130,8 @@ function handle = tracker_report(handle, region)
 % Input:
 % - handle (structure): Communication handle structure.
 % - region (vector): Predicted region as a rectangle or a polygon.
+% - confidence (float): Optional number that indicates confidence of prediction.
+%   Can be on arbitrary scale, higher value means more confidence.
 %
 % Output:
 % - handle (structure): Updated communication handle structure.
@@ -171,25 +144,25 @@ function handle = tracker_report(handle, region)
         error('VOT: Handle should be a structure.');
     end;
 
-    if handle.trax
-        traxserver('status', region);
-        return;
-    end;
+	if ~isempty(handle.initialization)
+		handle.initialization = [];
+	end;
 
-    if handle.position > numel(handle.images)
-        return;
-    end;
-    
-    handle.regions{handle.position} = region;
+    parameters = struct();
 
-    handle.position = handle.position + 1;
+    if nargin > 2
+        parameters.confidence = confidence;
+    end
+
+    traxserver('status', region, parameters);
+
 end
 
 
 function tracker_quit(handle)
 % tracker_quit Closes the communication and saves the data
 %
-% This function closes the communication with the toolkit and 
+% This function closes the communication with the toolkit and
 % saves the remaining data.
 %
 % Input:
@@ -200,36 +173,6 @@ function tracker_quit(handle)
         error('VOT: Handle should be a structure.');
     end;
 
-    if handle.trax
-        traxserver('quit');
-        return;
-    end;
-
-    if iscell(handle.regions)
-
-        fid = fopen('output.txt', 'w');
-
-        for i = 1:numel(handle.regions)
-            region = handle.regions{i};
-
-            if numel(region) == 1
-                fprintf(fid, '%f\n', region);
-            elseif numel(region) == 4
-                fprintf(fid, '%f,%f,%f,%f\n', region(1), region(2), region(3), region(4));
-            elseif numel(region) >= 6 && mod(numel(region), 2) == 0
-                fprintf(fid, '%f,', region(1:end-1));
-                fprintf(fid, '%f\n', region(end));
-            else
-                error('VOT: Illegal result format');
-            end;
-
-        end;
-
-        fclose(fid);
-
-        quit();
-    else
-        error('VOT: Unable to write results.');
-    end
+    traxserver('quit');
 
 end

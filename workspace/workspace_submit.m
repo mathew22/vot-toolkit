@@ -45,6 +45,8 @@ function workspace_submit(tracker, sequences, experiments, varargin)
     
     context.files{end+1} = write_manifest(tracker);
 
+    tracker.performance = readstruct(benchmark_hardware());
+    
     tracker_performance_profile = fullfile(tracker.directory, 'performance.txt');
     writestruct(tracker_performance_profile, tracker.performance);
     context.files{end+1} = tracker_performance_profile;
@@ -57,15 +59,7 @@ function workspace_submit(tracker, sequences, experiments, varargin)
     files = cellfun(@(f) relativepath(f, rootdir), context.files, 'UniformOutput', false);
 
     print_indent(-1);
-    
-    print_text('Generating submission report ...');
-    
-    print_indent(1);
-    
-    report = report_submission(create_report_context(sprintf('submission_%s', tracker.identifier)), tracker, sequences, experiments);
-
-    print_indent(-1);
-    
+        
     try    
         
         print_text('Generating results archive, compressing %d files ...', numel(files));
@@ -79,7 +73,6 @@ function workspace_submit(tracker, sequences, experiments, varargin)
         print_text('');
         print_text('The submission material is now ready.');
         print_text('You can find the archive with raw results in %s.', resultfile);
-        print_text('The report with basic results can be found in %s.', report.target_file);
         print_text('You can copy the tables in the report to the supporting document of the submission.');
         print_text('Submit the archive and the document using the online form.');
         print_text('');
@@ -116,16 +109,8 @@ function context = gather_iterator(event, context)
             
             print_text('Sequence %s', event.sequence.name);
 
-            execution_parameters = struct();
-            if isfield(event.experiment, 'parameters')
-                execution_parameters = event.experiment.parameters;
-            end;
-            
-            sequence_directory = fullfile(event.tracker.directory, event.experiment.name, ...
-                event.sequence.name);
-            
-            [files, metadata] = tracker_evaluate(event.tracker, event.sequence, sequence_directory, ...
-                'type', event.experiment.type, 'parameters', execution_parameters, 'scan', true);
+            [files, metadata] = tracker_evaluate(event.tracker, event.sequence, ...
+                event.experiment, 'Scan', true);
 
             context.files = [context.files, files];
             context.completed = context.completed && metadata.completed;
